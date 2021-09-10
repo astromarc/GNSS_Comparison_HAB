@@ -1,10 +1,17 @@
 #include <TinyGPSPlus.h>
 TinyGPSPlus gal, gps;
 #include <SoftwareSerial.h>
-SoftwareSerial ssGAL(11, 10), ssGPS(3,2); // RX, TX
-
-
-
+SoftwareSerial ssGAL(11, 10), ssGPS(2,3); // RX, TX
+int gnssBoudRate = 9600;
+unsigned long previousMillis=0;
+unsigned long currentMillis;
+String gpsLine, galLine;
+TinyGPSCustom gpspdop(gps, "GPGSA", 15); // $GPGSA sentence, 15th element
+TinyGPSCustom gpshdop(gps, "GPGSA", 16); // $GPGSA sentence, 16th element
+TinyGPSCustom gpsvdop(gps, "GPGSA", 17); // $GPGSA sentence, 17th element
+TinyGPSCustom galpdop(gal, "GAGSA", 15); // $GPGSA sentence, 15th element
+TinyGPSCustom galhdop(gal, "GAGSA", 16); // $GPGSA sentence, 16th element
+TinyGPSCustom galvdop(gal, "GAGSA", 17); // $GPGSA sentence, 17th element
 
 // Set Nav Mode to Airborne 4G
 static const uint8_t setNavAir4G[] = {
@@ -58,74 +65,103 @@ static const uint8_t setGnssGps[] = {
 static const int len_setGnss = 66;
 
 
-
-
 // Set NMEA 4.1 Protocol
 static const uint8_t setNmea4_1[] = {
   0xB5, 0x62, 0x06, 0x17, 0x14, 0x00,
   0x00, 0x41, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 static const int len_setNmea = 26;
 
+
+// Set 5Hz
+static const uint8_t setFreq_5Hz[] = {
+  0xB5, 0x62, 0x06, 0x08, 0x06, 0x00,
+  0xC8, 0x00, 0x01, 0x00, 0x01,0x00};
+static const int len_setFreq = 12;
+
+// Set 1Hz
+static const uint8_t setFreq_1Hz[] = {
+  0xB5, 0x62, 0x06, 0x08, 0x06, 0x00,
+  0xE8, 0x03, 0x01, 0x00, 0x01,0x00};
+
 void setup() {
   
   Serial.begin(9600);
-  ssGAL.begin(9600);
-  sendUBX(setNavAir1G, len_setNav, ssGAL); // Set Airborne <1G Navigation Mode
-  delay(10);  
-  sendUBX(setNmea4_1, len_setNmea, ssGAL); // Set GNSS to only Galileo
-  delay(10);
-  sendUBX(setGnssGal, len_setGnss, ssGAL); // Set GNSS to only Galileo
-  delay(10);
-//  sendUBX(setNavAir1G, len_setNav, ssGPS); // Set Airborne <1G Navigation Mode
-  delay(10);  
- // sendUBX(setNmea4_1, len_setNmea, ssGPS); // Set GNSS to only Galileo
-  delay(10);
-  //sendUBX(setGnssGps, len_setGnss, ssGPS); // Set GNSS to only Galileo
-  delay(10); 
+  ssGAL.begin(gnssBoudRate);
+  configureGnss(ssGAL,"GAL",5);
+  ssGAL.end();
+  delay(500);
+  ssGPS.begin(gnssBoudRate);
+  configureGnss(ssGPS,"GPS",5);
+  ssGPS.end();
+  delay(500);
+  
+}
+
+
+
+
+void loop() { 
+
+ readGnss(ssGAL, 500, true, "GAL");
+ readGnss(ssGPS, 500, true,"GPS");
 
 }
 
-bool rawDebug = false;
-String gnssDevice = "GPS";
 
-void loop() { // run over and over
-  if(gnssDevice == "GAL"){
+void readGnss (SoftwareSerial gnss, int sampleTime, bool rawDebug, String constellation){
+  gnss.begin(gnssBoudRate);
+  while ((currentMillis-previousMillis) <= sampleTime){
   if (rawDebug == true){
-  if (ssGAL.available()) {
-    Serial.write(ssGAL.read());
+  if (gnss.available()) {
+    Serial.write(gnss.read());
   }
   if (Serial.available()) {
-    ssGAL.write(Serial.read());
+    gnss.write(Serial.read());
   }
   }
  else{
-      while (ssGAL.available() > 0)
-    if (gal.encode(ssGAL.read()))
-    displayInfo(gal);
+    if(constellation == "GPS"){
+    while (gnss.available() > 0)
+    if (gps.encode(gnss.read()))
+    displayInfo(gps, constellation); Serial.println(gpsLine);
+    }
+    if(constellation == "GAL"){
+    while (gnss.available() > 0)
+    if (gps.encode(gnss.read()))
+    displayInfo(gal, constellation);Serial.println(galLine);}
+  }
+ currentMillis = millis();
+  }
+  previousMillis = currentMillis;
+  gnss.end();
+  }
   
-}
-  }
-
-    if(gnssDevice == "GPS"){
-  if (rawDebug == true){
-  if (ssGPS.available()) {
-    Serial.write(ssGPS.read());
-  }
-  if (Serial.available()) {
-    ssGPS.write(Serial.read());
-  }
-  }
- else{
-      while (ssGPS.available() > 0)
-    if (gps.encode(ssGPS.read()))
-    displayInfo(gps);
   
-}
-  }
 
 
-}
-
+void configureGnss(SoftwareSerial gnss, String constellation, int boudRate){
+  ssGAL.flush();
+  delay(100);
+  sendUBX(setNavAir1G, len_setNav, gnss); // Set Airborne <1G Navigation Mode
+  delay(100);  
+  sendUBX(setNmea4_1, len_setNmea, gnss); // Set NMEA 4.1 (needed 4 Galileo)
+  delay(100);
+  if (constellation == "GPS"){
+  sendUBX(setGnssGps, len_setGnss, gnss);// Set GNSS to only GPS
+  delay(100);}
+  if (constellation == "ALL"){
+  sendUBX(setGnssAll, len_setGnss, gnss);// Set GNSS to only GPS
+  delay(100);}
+  if (constellation == "GAL"){
+  sendUBX(setGnssGal, len_setGnss, gnss);// Set GNSS to only GAL
+  delay(100);}
+  if (boudRate == 1){
+  sendUBX(setFreq_1Hz, len_setFreq, gnss); // Set GNSS to only GPS
+  delay(100);}
+  if (boudRate == 5){
+  sendUBX(setFreq_5Hz, len_setFreq, gnss); // Set GNSS to only GPS
+  delay(100);}
+   }
 
 
 void sendUBX(const uint8_t *message, const int len, SoftwareSerial serial) {
@@ -144,54 +180,106 @@ void sendUBX(const uint8_t *message, const int len, SoftwareSerial serial) {
   serial.write((uint8_t)csum2);
 }
 
-void displayInfo(TinyGPSPlus gps)
+void displayInfo(TinyGPSPlus gnss, String constellation)
 {
-  
-  Serial.print(F(" "));
-  if (gps.time.isValid())
+  if (constellation = "GPS"){
+     gpsLine = "GPS,";
+if (gps.time.isValid())
   {
-    if (gps.time.hour() < 10) Serial.print(F("0"));
-    Serial.print(gps.time.hour());
-    Serial.print(F(":"));
-    if (gps.time.minute() < 10) Serial.print(F("0"));
-    Serial.print(gps.time.minute());
-    Serial.print(F(":"));
-    if (gps.time.second() < 10) Serial.print(F("0"));
-    Serial.print(gps.time.second());
-    Serial.print(F("."));
-    if (gps.time.centisecond() < 10) Serial.print(F("0"));
-    Serial.print(gps.time.centisecond());
+    if (gps.time.hour() < 10) gpsLine += "0";
+    
+    gpsLine += String(gps.time.hour());
+    gpsLine += ":";
+    
+    if (gps.time.minute() < 10) gpsLine += "0";
+    gpsLine += String(gps.time.minute());
+    gpsLine += ":";
+    
+    if (gps.time.second() < 10) gpsLine += "0";
+    gpsLine += String(gps.time.second());
+    gpsLine += ".";
+    if (gps.time.centisecond() < 10) gpsLine += "0";
+    gpsLine += String(gps.time.centisecond());
+    gpsLine += ",";
+    
   }
   else
   {
-    Serial.print(F("INVALID"));
+    gpsLine +="invaidtime,";
   }
-  Serial.print(",");
+
   if (gps.location.isValid())
   {
-    Serial.print(gps.location.lat(), 6);
-    Serial.print(F(","));
-    Serial.print(gps.location.lng(), 6);
+    gpsLine +=  String(gps.location.lat(), 6);
+    gpsLine += ",";
+    gpsLine += String(gps.location.lng(), 6);
+    gpsLine += ",";
   }
   else
   {
-    Serial.print(F("INVALID"));
+    gpsLine += "invalidloc,";
   }
-  Serial.print(",");
-  if (gps.satellites.isValid())
+     gpsLine +=   String(gps.altitude.meters()); 
+     gpsLine += ",";
+     gpsLine +=   String(gpspdop.value()); 
+     gpsLine += ",";
+     gpsLine +=   String(gpshdop.value()); 
+     gpsLine += ",";
+     gpsLine +=  String(gpsvdop.value());
+     gpsLine += ",";
+     gpsLine +=  String(gps.satellites.value());
+
+}
+
+  if (constellation = "GAL"){
+     galLine = "GAL,";
+if (gal.time.isValid())
   {
-    Serial.print(gps.satellites.value());}
+    if (gal.time.hour() < 10) galLine += "0";
+    
+    galLine += String(gal.time.hour());
+    galLine += ":";
+    
+    if (gal.time.minute() < 10) galLine += "0";
+    galLine += String(gal.time.minute());
+    galLine += ":";
+    
+    if (gal.time.second() < 10) galLine += "0";
+    galLine += String(gps.time.second());
+    galLine += ".";
+    if (gal.time.centisecond() < 10) galLine += "0";
+    galLine += String(gal.time.centisecond());
+    galLine += ",";
+    
+  }
   else
   {
-    Serial.print(F("INVALID"));
+    galLine +="invaidtime,";
   }
-  Serial.print(",");
-  if (gps.hdop.isValid())
+
+  if (gal.location.isValid())
   {
-    Serial.print(gps.hdop.hdop());}
+    galLine +=  String(gal.location.lat(), 6);
+    galLine += ",";
+    galLine += String(gal.location.lng(), 6);
+    galLine += ",";
+  }
   else
   {
-    Serial.print(F("INVALID"));
+    galLine += "invalidloc,";
   }
-  Serial.println();
+     galLine +=   String(gal.altitude.meters()); 
+     galLine += ",";
+     galLine +=   String(galpdop.value()); 
+     galLine += ",";
+     galLine +=   String(galhdop.value()); 
+     galLine += ",";
+     galLine +=  String(galvdop.value());
+     galLine += ",";
+     galLine +=  String(gal.satellites.value());
+
+  
+
+  
+}
 }
