@@ -1,0 +1,6 @@
+{
+    "board": "arduino:avr:uno",
+    "programmer": "arduino:avrisp",
+    "port": "COM6",
+    "sketch": "GNSS_comparator.ino"
+}
