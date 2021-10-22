@@ -2,6 +2,7 @@
 // It starts the module at NMEA 4.1 at Airborne <1G with a configurable frequency (0.5, 1 and 5Hz)
 // and option to only show GxGGA or all the NMEA sentences (see configureGNSS function)
 // No warranties at all :)
+// if only using a Soft Serial, just somment ssGAL and put just '1' in the serialPort pointer. 
 // use of pointer with Software Serial to make it easier to play with when declaring functions;
 // as this code is intended to be used when communicating whith serial with more than one GNSS modules
 // GNSS Modules ~ GPS Modules ;)
