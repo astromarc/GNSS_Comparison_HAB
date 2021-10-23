@@ -16,7 +16,8 @@ TinyGPSPlus gps;
 TinyGPSPlus gal;
 SoftwareSerial ssGPS(5, 4);
 SoftwareSerial ssGAL(3, 2);
-SoftwareSerial * serialPort[2] = { &ssGPS, &ssGAL };
+SoftwareSerial ssLORA(7, 6);
+SoftwareSerial * serialPort[3] = { &ssGPS, &ssGAL, &ssLORA};
 const int boudRate = 9600;
 unsigned long previousMillis = 0;
 unsigned long currentMillis;
@@ -106,6 +107,7 @@ static const uint8_t setFreq_1Hz[] = {
 
 void setup() {
   Serial.begin(19200);
+  serialPort[2]->begin(9600); // LoRa
   Serial.println(F("Start Setup"));
   pinMode(A0, OUTPUT);
   pinMode(A1, OUTPUT);
@@ -142,7 +144,7 @@ void setup() {
 
 void loop() {
   //Serial.println("BEGIN LOOP");
-  
+
   readGnss(serialPort[0], 1000, boudRate, "GPS", false);
   readGnss(serialPort[1], 1000, boudRate, "GAL", false);
   // Prepare message to send via LoRa
@@ -169,25 +171,42 @@ void loop() {
   mssgLora += String(bmp.readTemperature());
   mssgLora += ",";
   mssgLora += String(bmp.readAltitude(baselinePressure));
-  //Serial.println(mssgLora);
-
+  serialPort[2]->println(mssgLora);
+  
   sdWrite(gps, gal);
 
-Serial.println(displayInfo(gps));
-Serial.println(displayInfo(gal));
+  Serial.println(displayInfo(gps));
+  Serial.println(displayInfo(gal));
 
   // INDICATORS
-  if(bmp.readAltitude(baselinePressure) <= 5000){
-  if (gal.location.isValid() && gal.location.isValid()) {digitalWrite(A2,HIGH); digitalWrite(A1,LOW); digitalWrite(A0,LOW);}
-  if (gps.location.isValid() && (gal.location.isValid() == false)) {digitalWrite(A1,HIGH);digitalWrite(A2,LOW);digitalWrite(A0,LOW);}
-  if (gal.location.isValid() && (gps.location.isValid() == false)) {digitalWrite(A1,HIGH);digitalWrite(A2,LOW);digitalWrite(A0,LOW);}
-  if (gal.location.isValid() == false && (gps.location.isValid() == false)) {digitalWrite(A0, HIGH); digitalWrite(A0, LOW); delay(500);digitalWrite(A0, HIGH);}
+  if (bmp.readAltitude(baselinePressure) <= 5000) {
+    if (gal.location.isValid() && gal.location.isValid()) {
+      digitalWrite(A2, HIGH);
+      digitalWrite(A1, LOW);
+      digitalWrite(A0, LOW);
+    }
+    if (gps.location.isValid() && (gal.location.isValid() == false)) {
+      digitalWrite(A1, HIGH);
+      digitalWrite(A2, LOW);
+      digitalWrite(A0, LOW);
+    }
+    if (gal.location.isValid() && (gps.location.isValid() == false)) {
+      digitalWrite(A1, HIGH);
+      digitalWrite(A2, LOW);
+      digitalWrite(A0, LOW);
+    }
+    if (gal.location.isValid() == false && (gps.location.isValid() == false)) {
+      digitalWrite(A0, HIGH);
+      digitalWrite(A0, LOW);
+      delay(500);
+      digitalWrite(A0, HIGH);
+    }
   }
-  else{
+  else {
     digitalWrite(A0, LOW);
     digitalWrite(A1, LOW);
     digitalWrite(A2, LOW);
-    }
+  }
 
 
 }
@@ -226,14 +245,14 @@ void sdWrite (TinyGPSPlus gnssGps, TinyGPSPlus gnssGal) {
   mssgSd += String(bmp.readAltitude(baselinePressure));
   mssgSd += ",";
   mssgSd += String(bmp.readPressure());
-   File dataFile = SD.open("data.csv", FILE_WRITE);
-    if (dataFile) {
+  File dataFile = SD.open("data.csv", FILE_WRITE);
+  if (dataFile) {
     dataFile.println(mssgSd);
     dataFile.close();
   }
-   
 
- // Serial.println(mssgSd);
+
+  // Serial.println(mssgSd);
 
 }
 
