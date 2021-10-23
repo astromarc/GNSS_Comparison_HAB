@@ -1,4 +1,19 @@
+// SD
+#include <SPI.h>
+#include <SD.h>
+const int chipSelect = 9;
+
+// BMP180
+#include <Adafruit_BMP085.h>
+Adafruit_BMP085 bmp;
+double baselinePressure = 100900; // In PA
+
+// GNSS
+#include <PString.h>
 #include <SoftwareSerial.h>
+#include <TinyGPSPlus.h>
+TinyGPSPlus gps;
+TinyGPSPlus gal;
 SoftwareSerial ssGPS(5, 4);
 SoftwareSerial ssGAL(3, 2);
 SoftwareSerial * serialPort[2] = { &ssGPS, &ssGAL };
@@ -9,6 +24,16 @@ byte bytegps = 0;
 int i = 0;
 char datagps[90] = "";
 char * lineSc = "";
+String mssgLora = "";
+String mssgLora2 = "";
+TinyGPSCustom gpspdop(gps, "GPGSA", 15); // $GPGSA sentence, 15th element
+TinyGPSCustom gpshdop(gps, "GPGSA", 16); // $GPGSA sentence, 16th element
+TinyGPSCustom gpsvdop(gps, "GPGSA", 17); // $GPGSA sentence, 17th element
+TinyGPSCustom galpdop(gal, "GAGSA", 15); // $GPGSA sentence, 15th element
+TinyGPSCustom galhdop(gal, "GAGSA", 16); // $GPGSA sentence, 16th element
+TinyGPSCustom galvdop(gal, "GAGSA", 17); // $GPGSA sentence, 17th element
+TinyGPSCustom gpssatellites(gps, "GPGGA", 7);
+TinyGPSCustom galsatellites(gal, "GAGGA", 7); //
 
 
 //
@@ -80,40 +105,157 @@ static const uint8_t setFreq_1Hz[] = {
 
 
 void setup() {
-  Serial.begin(boudRate);
+  Serial.begin(19200);
   Serial.println(F("Start Setup"));
+  pinMode(A0, OUTPUT);
+  pinMode(A1, OUTPUT);
+  pinMode(A2, OUTPUT);
+
+  //SD
+  if (!SD.begin(chipSelect)) {
+    Serial.println("Card failed, or not present"); digitalWrite(A0, HIGH);
+    // don't do anything more:
+    while (1);
+  }
+  File dataFile = SD.open("data.csv", FILE_WRITE);
+  if (dataFile) {
+    dataFile.println("GALTIME,GALLAT,GALLONG,GALALT,GALSAT,GALPDOP,GALHDOP,GALVDOP,GPSTIME,GPSLAT,GPSLONG,GPSALT,GPSSAT,GPSPDOP,GPSHDOP,GPSVDOP,BMPTEMP,BMPALT,BMPPRESSURE");
+    dataFile.close();
+  }
+
+
+  //BMP180
+  if (!bmp.begin()) {
+    Serial.println("Could not find a valid BMP085 sensor, check wiring!"); digitalWrite(A0, HIGH);
+    while (1) {}
+  }
+
+  // GPS
   ssGPS.begin(boudRate);
   ssGAL.begin(boudRate);
-  configureGnss(serialPort[0], "GPS", 1);
-  configureGnss(serialPort[1], "GAL", 1);
-  
+  configureGnss(serialPort[0], "GPS", 5);
+  configureGnss(serialPort[1], "GAL", 5);
+
+
 
 }
 
 void loop() {
-  Serial.println("BEGIN LOOP");
-  readGnss(serialPort[0], 1000, boudRate, "GPS", true);
-  readGnss(serialPort[1], 1000, boudRate, "GAL", true);
+  //Serial.println("BEGIN LOOP");
   
-  
- 
+  readGnss(serialPort[0], 1000, boudRate, "GPS", false);
+  readGnss(serialPort[1], 1000, boudRate, "GAL", false);
+  // Prepare message to send via LoRa
+  if (gps.location.isValid()) {
+    mssgLora = displayInfo(gps);
+    //Serial.println("GPS");
+  }
+  else {
+    mssgLora = displayInfo(gal);
+    //Serial.println("GAL");
+  }
+  if (gal.location.isValid() && gal.location.isValid()) {
+    mssgLora += ",3,";
+  }
+  if (gps.location.isValid() && (gal.location.isValid() == false)) {
+    mssgLora += ",1,";
+  }
+  if (gal.location.isValid() && (gps.location.isValid() == false)) {
+    mssgLora += ",2,";
+  }
+  if (gal.location.isValid() == false && (gps.location.isValid() == false)) {
+    mssgLora += "NaN,NaN,NaN,NaN,";
+  }
+  mssgLora += String(bmp.readTemperature());
+  mssgLora += ",";
+  mssgLora += String(bmp.readAltitude(baselinePressure));
+  //Serial.println(mssgLora);
+
+  sdWrite(gps, gal);
+
+Serial.println(displayInfo(gps));
+Serial.println(displayInfo(gal));
+
+  // INDICATORS
+  if(bmp.readAltitude(baselinePressure) <= 5000){
+  if (gal.location.isValid() && gal.location.isValid()) {digitalWrite(A2,HIGH); digitalWrite(A1,LOW); digitalWrite(A0,LOW);}
+  if (gps.location.isValid() && (gal.location.isValid() == false)) {digitalWrite(A1,HIGH);digitalWrite(A2,LOW);digitalWrite(A0,LOW);}
+  if (gal.location.isValid() && (gps.location.isValid() == false)) {digitalWrite(A1,HIGH);digitalWrite(A2,LOW);digitalWrite(A0,LOW);}
+  if (gal.location.isValid() == false && (gps.location.isValid() == false)) {digitalWrite(A0, HIGH); digitalWrite(A0, LOW); delay(500);digitalWrite(A0, HIGH);}
+  }
+  else{
+    digitalWrite(A0, LOW);
+    digitalWrite(A1, LOW);
+    digitalWrite(A2, LOW);
+    }
+
+
+}
+
+
+void sdWrite (TinyGPSPlus gnssGps, TinyGPSPlus gnssGal) {
+  String mssgGps = "";
+  String mssgGal = "";
+  String mssgSd = "";
+  mssgGal = displayInfo(gnssGal);
+  mssgGal += ",";
+  mssgGal += gal.satellites.value();
+  mssgGal += ",";
+  mssgGal += galpdop.value();
+  mssgGal += ",";
+  mssgGal += galhdop.value();
+  mssgGal += ",";
+  mssgGal += galvdop.value();
+  mssgGal += ",";
+
+  mssgGps = displayInfo(gnssGps);
+  mssgGps += ",";
+  mssgGps += gps.satellites.value();
+  mssgGps += ",";
+  mssgGps += gpspdop.value();
+  mssgGps += ",";
+  mssgGps += gpshdop.value();
+  mssgGps += ",";
+  mssgGps += gpsvdop.value();
+
+
+  mssgSd += mssgGal += mssgGps;
+  mssgSd += ",";
+  mssgSd += String(bmp.readTemperature());
+  mssgSd += ",";
+  mssgSd += String(bmp.readAltitude(baselinePressure));
+  mssgSd += ",";
+  mssgSd += String(bmp.readPressure());
+   File dataFile = SD.open("data.csv", FILE_WRITE);
+    if (dataFile) {
+    dataFile.println(mssgSd);
+    dataFile.close();
+  }
+   
+
+ // Serial.println(mssgSd);
+
 }
 
 
 void readGnss (SoftwareSerial * serialPort, int sampleTime, int boudrate, String constellation, bool rawDebug) {
 
-serialPort->listen();
+  serialPort->listen();
   while ((currentMillis - previousMillis) <= sampleTime) {
     if (serialPort->available()) {
       memset(lineSc, sizeof(lineSc), 0);
-      lineSc = getLine(serialPort);//
+      lineSc = getLine(serialPort);
       if (rawDebug) Serial.println(lineSc);
+      if (constellation == "GPS")  {
+        while (*lineSc) if (gps.encode(*lineSc++));
+      }
+      if (constellation == "GAL")  {
+        while (*lineSc) if (gal.encode(*lineSc++));
+      }
     }
     currentMillis = millis();
   }
   previousMillis = currentMillis;
-
-
 
 }
 
@@ -155,10 +297,10 @@ void configureGnss(SoftwareSerial * serialPort, String constellation, int freq) 
   delay(50);
   sendUBX(setNmea4_1, len_setNmea, serialPort); // Set NMEA 4.1 (needed 4 Galileo)
   delay(50);
-    if (freq == 1) {
-      sendUBX(setFreq_1Hz, len_setFreq, serialPort); // Set GNSS to only GPS
-      delay(50);
-    }
+  if (freq == 1) {
+    sendUBX(setFreq_1Hz, len_setFreq, serialPort); // Set GNSS to only GPS
+    delay(50);
+  }
   if (freq == 5) {
     sendUBX(setFreq_5Hz, len_setFreq, serialPort); // Set GNSS to only GPS
     delay(50);
@@ -187,4 +329,43 @@ void sendUBX(const uint8_t *message, const int len, SoftwareSerial * serialPort)
   csum2 = csum2 & 0xff;
   serialPort->write((uint8_t)csum1); // Send the checksum bytes
   serialPort->write((uint8_t)csum2);
+}
+
+String displayInfo(TinyGPSPlus gnss) {
+  String mssg = "";
+  if (gnss.time.isValid())
+  {
+    if (gnss.time.hour() < 10) mssg += (F("0"));
+    mssg = (gnss.time.hour());
+    mssg += (F(":"));
+    if (gnss.time.minute() < 10) mssg += (F("0"));
+    mssg += (gnss.time.minute());
+    mssg += (F(":"));
+    if (gnss.time.second() < 10) mssg += (F("0"));
+    mssg += (gnss.time.second());
+    mssg += (F("."));
+    if (gnss.time.centisecond() < 10) mssg += (F("0"));
+    mssg += (gnss.time.centisecond());
+  }
+  else
+  {
+    mssg += (F("INVALID"));
+  }
+  mssg += (F(","));
+  // Location
+  if (gnss.location.isValid())
+  {
+    mssg += String(gnss.location.lat(), 4);
+    mssg += (F(","));
+    mssg += String(gnss.location.lng(), 4);
+    mssg += (F(","));
+    mssg += String(gnss.altitude.meters());
+  }
+  else
+  {
+    mssg += (F("INVALID"));
+  }
+
+  return mssg;
+
 }

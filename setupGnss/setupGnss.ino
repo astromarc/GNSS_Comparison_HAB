@@ -149,8 +149,8 @@ static const uint8_t setNmea_enableVTG[] = {
 void setup() {
   Serial.begin(9600);
   Serial.println(F("Start Setup"));
-  serialPort[0]->begin(9600);
-  configureGnss(serialPort[0], "0.5", true); //Serial port, Frequency, onlyGGA
+  serialPort[1]->begin(9600);
+  configureGnss(serialPort[1], "5", false); //Serial port, Frequency, onlyGGA
 
   
 
@@ -158,11 +158,11 @@ void setup() {
 
 void loop() {
 
-    if (serialPort[0]->available()) {
-    Serial.write(serialPort[0]->read());
+    if (serialPort[1]->available()) {
+    Serial.write(serialPort[1]->read());
   }
     if (Serial.available()) {
-    serialPort[0]->write(Serial.read());
+    serialPort[1]->write(Serial.read());
   }
  
 }
