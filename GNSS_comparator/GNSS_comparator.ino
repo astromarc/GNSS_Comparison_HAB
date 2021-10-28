@@ -23,6 +23,8 @@ unsigned long previousMillis = 0;
 unsigned long currentMillis;
 byte bytegps = 0;
 int i = 0;
+int numLora = 20; //  to be multiplied for 3 seconds (e.g., 20 each minute, 10 for 30 sec...
+int counter = 0;
 char datagps[90] = "";
 char * lineSc = "";
 String mssgLora = "";
@@ -112,6 +114,7 @@ void setup() {
   pinMode(A0, OUTPUT);
   pinMode(A1, OUTPUT);
   pinMode(A2, OUTPUT);
+  digitalWrite(A0, HIGH);
 
   //SD
   if (!SD.begin(chipSelect)) {
@@ -145,61 +148,54 @@ void setup() {
 void loop() {
   //Serial.println("BEGIN LOOP");
 
-  readGnss(serialPort[0], 1000, boudRate, "GPS", false);
+  mssgLora = "";
+  readGnss(serialPort[0], 1750, boudRate, "GPS", false);
   readGnss(serialPort[1], 1000, boudRate, "GAL", false);
   // Prepare message to send via LoRa
   if (gps.location.isValid()) {
-    mssgLora = displayInfo(gps);
+    mssgLora = displayInfoSmall(gps);
     //Serial.println("GPS");
   }
   else {
-    mssgLora = displayInfo(gal);
+    mssgLora = displayInfoSmall(gal);
     //Serial.println("GAL");
   }
-  if (gal.location.isValid() && gal.location.isValid()) {
-    mssgLora += ",3,";
+  Serial.println(mssgLora);
+  if (counter > numLora) {
+    serialPort[2]->flush();
+    serialPort[2]->println(mssgLora);
+    serialPort[2]->flush();
+    Serial.println(mssgLora);
+    counter = 0;
   }
-  if (gps.location.isValid() && (gal.location.isValid() == false)) {
-    mssgLora += ",1,";
-  }
-  if (gal.location.isValid() && (gps.location.isValid() == false)) {
-    mssgLora += ",2,";
-  }
-  if (gal.location.isValid() == false && (gps.location.isValid() == false)) {
-    mssgLora += "NaN,NaN,NaN,NaN,";
-  }
-  mssgLora += String(bmp.readTemperature());
-  mssgLora += ",";
-  mssgLora += String(bmp.readAltitude(baselinePressure));
-  serialPort[2]->println(mssgLora);
-  
-  sdWrite(gps, gal);
+  counter++;
+  if (counter <= (numLora -5)){
+  sdWrite(gps, gal);}
 
-  Serial.println(displayInfo(gps));
-  Serial.println(displayInfo(gal));
+  //Serial.println(displayInfo(gps));
+  //Serial.println(displayInfo(gal));
+
 
   // INDICATORS
-  if (bmp.readAltitude(baselinePressure) <= 5000) {
-    if (gal.location.isValid() && gal.location.isValid()) {
+  if (bmp.readAltitude(baselinePressure) <= 5000 && counter <= numLora) {
+    if (gal.location.isValid() || gps.location.isValid()) {
+      digitalWrite(A2, LOW);
       digitalWrite(A2, HIGH);
+      delay(250);
+      digitalWrite(A2, LOW);
+      digitalWrite(A0, LOW);
+    }
+    if (gal.location.isValid() && gps.location.isValid()) {
+      digitalWrite(A2, LOW);
+      digitalWrite(A1, HIGH);
+      delay(250);
       digitalWrite(A1, LOW);
-      digitalWrite(A0, LOW);
-    }
-    if (gps.location.isValid() && (gal.location.isValid() == false)) {
-      digitalWrite(A1, HIGH);
-      digitalWrite(A2, LOW);
-      digitalWrite(A0, LOW);
-    }
-    if (gal.location.isValid() && (gps.location.isValid() == false)) {
-      digitalWrite(A1, HIGH);
-      digitalWrite(A2, LOW);
       digitalWrite(A0, LOW);
     }
     if (gal.location.isValid() == false && (gps.location.isValid() == false)) {
       digitalWrite(A0, HIGH);
-      digitalWrite(A0, LOW);
       delay(500);
-      digitalWrite(A0, HIGH);
+      digitalWrite(A0, LOW);
     }
   }
   else {
@@ -245,14 +241,15 @@ void sdWrite (TinyGPSPlus gnssGps, TinyGPSPlus gnssGal) {
   mssgSd += String(bmp.readAltitude(baselinePressure));
   mssgSd += ",";
   mssgSd += String(bmp.readPressure());
+  SD.begin(chipSelect);
   File dataFile = SD.open("data.csv", FILE_WRITE);
   if (dataFile) {
     dataFile.println(mssgSd);
     dataFile.close();
   }
+ 
 
-
-  // Serial.println(mssgSd);
+  Serial.println(mssgSd);
 
 }
 
@@ -368,7 +365,7 @@ String displayInfo(TinyGPSPlus gnss) {
   }
   else
   {
-    mssg += (F("INVALID"));
+    mssg += (F("X"));
   }
   mssg += (F(","));
   // Location
@@ -382,7 +379,27 @@ String displayInfo(TinyGPSPlus gnss) {
   }
   else
   {
-    mssg += (F("INVALID"));
+    mssg += (F("X,X,X"));
+  }
+
+  return mssg;
+
+}
+
+String displayInfoSmall(TinyGPSPlus gnss) {
+  String mssg = "";
+  // Location
+  if (gnss.location.isValid())
+  {
+    mssg += String(gnss.location.lat(), 4);
+    mssg += (F(","));
+    mssg += String(gnss.location.lng(), 4);
+    mssg += (F(","));
+    mssg += String(gnss.altitude.meters(),0);
+  }
+  else
+  {
+    mssg += (F("X,X,X"));
   }
 
   return mssg;
