@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Folder>
+    <GroundOverlay>
+      <Icon>
+        <href>initialHotzone.png</href>
+      </Icon>
+      <LatLonBox>
+        <north>41.6951547258717099</north>
+        <south>41.6123466703545617</south>
+        <east>4.1407657035042096</east>
+        <west>0.4685623098285422</west>
+        <rotation>0</rotation>
+      </LatLonBox>
+    </GroundOverlay>
+  </Folder>
+</kml>
